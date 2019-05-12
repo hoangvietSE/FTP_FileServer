@@ -70,6 +70,9 @@ DWORD WINAPI ClientThread(LPVOID arg) {
 	send(connSock, welcome, strlen(welcome), 0);
 	SOCKET connSock = (SOCKET)arg;
 	char command[1024];
+	bool checkUserLogin = false;
+	bool checkUser = false;
+
 	while (true) {
 		n = 0;
 		while (true) {
@@ -109,8 +112,9 @@ DWORD WINAPI ClientThread(LPVOID arg) {
 		if (strncmp(receive_buffer, "USER: ", 6) == 0)
 		{
 			//memset(send_buffer, 0, 1024);
-			sprintf(send_buffer, "331 Password required \r\n");
+			sprintf(send_buffer, "331 User name okay, need password \r\n");
 			bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+			checkUser = true;
 			if (bytes < 0) break;
 		}
 
@@ -118,31 +122,44 @@ DWORD WINAPI ClientThread(LPVOID arg) {
 		if (strncmp(receive_buffer, "PASS: ", 6) == 0)
 		{
 			//memset(send_buffer, 0, 1024);
-			sprintf(send_buffer, "230 Public login sucessful \r\n");
-			bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+			if (checkUser) {
+				sprintf(send_buffer, "230 Public login sucessful \r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+				checkUserLogin = true;
+			}
+			else {
+				sprintf(send_buffer, "231 User logged out; service terminated\r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+			}
 			if (bytes < 0) break;
 		}
 
 		//SYST: require system type
 		if (strncmp(receive_buffer, "SYST: ", 6) == 0)
 		{
-			system("ver > tmp.txt");
+			if (checkUserLogin) {
+				system("cd RemoteHost&&ver > syst.txt");
 
-			FILE *fin = fopen("tmp.txt", "r");//open tmp.txt file
-			//(send_buffer, 0, 1024);
-			sprintf(send_buffer, "150 Transfering... \r\n");//send_buffer will pointer to string in sprintf
-			bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
-			char temp_buffer[80];
-			while (!feof(fin))
-			{
-				fgets(temp_buffer, 78, fin);//read content of file tmp.txt and save in temp_buffer
-				sprintf(send_buffer, "%s", temp_buffer);//send_buffer will pointer to string in temp_buffer
-				send(connSock, send_buffer, strlen(send_buffer), 0);
+				FILE *fin = fopen("RemoteHost/syst.txt", "r");//open tmp.txt file
+															  //(send_buffer, 0, 1024);
+				sprintf(send_buffer, "150 Transfering... \r\n");//send_buffer will pointer to string in sprintf
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+				char temp_buffer[80];
+				while (!feof(fin))
+				{
+					fgets(temp_buffer, 78, fin);//read content of file tmp.txt and save in temp_buffer
+					sprintf(send_buffer, "%s", temp_buffer);//send_buffer will pointer to string in temp_buffer
+					send(connSock, send_buffer, strlen(send_buffer), 0);
+				}
+				fclose(fin);
+				sprintf(send_buffer, "226 File transfer completed... \r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
 			}
-			fclose(fin);
-			sprintf(send_buffer, "226 File transfer completed... \r\n");
-			bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
-
+			else
+			{
+				sprintf(send_buffer, "231 User logged out; service terminated\r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+			}
 			if (bytes < 0) break;
 		}
 
@@ -151,30 +168,36 @@ DWORD WINAPI ClientThread(LPVOID arg) {
 		// PORT 21: data connection(default)
 		if (strncmp(receive_buffer, "PORT: ", 6) == 0)
 		{
-			SOCKET data_connSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-			unsigned char new_port[2];// specific by client
-			int new_ip[4];//specific by client
-			int dst_port;// for sockaddr_in
-			char dst_ip[40];// for sockaddr_in
-			sscanf(receive_buffer, "PORT: %d,%d,%d,%d,%d,%d", &new_ip[0], &new_ip[1], &new_ip[2], &new_ip[3], &new_port[0], &new_port[1]);
+			if (checkUserLogin) {
+				SOCKET data_connSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+				unsigned char new_port[2];// specific by client
+				int new_ip[4];//specific by client
+				int dst_port;// for sockaddr_in
+				char dst_ip[40];// for sockaddr_in
+				sscanf(receive_buffer, "PORT: %d,%d,%d,%d,%d,%d", &new_ip[0], &new_ip[1], &new_ip[2], &new_ip[3], &new_port[0], &new_port[1]);
 
-			//sockaddr_in new_clientAddr;
-			dst_port = new_port[0] * 256 + new_port[1];
-			sprintf(dst_ip, "%d.%d.%d.%d", new_ip[0], new_ip[1], new_ip[2], new_ip[3]);
-			new_clientAddr.sin_family = AF_INET;
-			new_clientAddr.sin_port = htons(dst_port);
-			new_clientAddr.sin_addr.S_un.S_addr = inet_addr(dst_ip);
+				//sockaddr_in new_clientAddr;
+				dst_port = new_port[0] * 256 + new_port[1];
+				sprintf(dst_ip, "%d.%d.%d.%d", new_ip[0], new_ip[1], new_ip[2], new_ip[3]);
+				new_clientAddr.sin_family = AF_INET;
+				new_clientAddr.sin_port = htons(dst_port);
+				new_clientAddr.sin_addr.S_un.S_addr = inet_addr(dst_ip);
 
-			//connect to new client
-			if (connect(data_connSock, (sockaddr*)&new_clientAddr, sizeof(new_clientAddr))) {
-				printf("Try connection in %s:%d", inet_ntoa(new_clientAddr.sin_addr), ntohs(new_clientAddr.sin_port));
-				sprintf(send_buffer, "425 Something is wrong, can't start the active connection... \r\n");
-				bytes = send(connSock, send_buffer, sizeof(send_buffer), 0);
+				//connect to new client
+				if (connect(data_connSock, (sockaddr*)&new_clientAddr, sizeof(new_clientAddr))) {
+					printf("Try connection in %s:%d", inet_ntoa(new_clientAddr.sin_addr), ntohs(new_clientAddr.sin_port));
+					sprintf(send_buffer, "425 Something is wrong, can't start the active connection... \r\n");
+					bytes = send(connSock, send_buffer, sizeof(send_buffer), 0);
+				}
+				else {
+					printf("Data connection to client created (active connection) \n");
+					sprintf(send_buffer, "200 OK \r\n");
+					bytes = send(connSock, send_buffer, sizeof(send_buffer), 0);
+				}
 			}
 			else {
-				printf("Data connection to client created (active connection) \n");
-				sprintf(send_buffer, "200 OK \r\n");
-				bytes = send(connSock, send_buffer, sizeof(send_buffer), 0);
+				sprintf(send_buffer, "231 User logged out; service terminated\r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
 			}
 
 		}
@@ -182,43 +205,99 @@ DWORD WINAPI ClientThread(LPVOID arg) {
 		//STOR: Accept the data and to store the data as a file at the server site
 		if (strncmp(receive_buffer, "STOR: ", 6) == 0)
 		{	
-			
+			if (checkUserLogin) {
+				//printf("%s", command); ->Log.d("myLog",command);
+				//"command" is file name that is sent to server
+				if (fopen(command, "r") == NULL) {
+					sprintf(send_buffer, "450 Requested file action not taken. \r\n");
+					send(connSock, send_buffer, sizeof(send_buffer), 0);
+				}
+				else {
+					sprintf(send_buffer, "150 Transfering... \r\n");
+					bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+
+					//handle file
+					FILE *fp = fopen(command, "r");
+					char ch;
+					FILE *new_file = fopen("RemoteHost/SuperMatch.txt", "w");
+					while ((ch = fgetc(fp)) != EOF) {
+						//printf("%c", ch); ->Log
+						fputc(ch, new_file);
+					}
+					fclose(new_file);
+					fclose(fp);
+
+					sprintf(send_buffer, "226 File transfer completed... \r\n");
+					bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+				}
+			}
+			else {
+				sprintf(send_buffer, "231 User logged out; service terminated\r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+			}
 		}
 
 		//RETR: download a copy of a file on the server
 		if (strncmp(receive_buffer, "RETR: ", 6) == 0)
 		{
-			//printf("%s", command); ->Log.d("myLog",command);
-			//"command" is file name that is sent to client
-			if (fopen(command, "r") == NULL) {
-				sprintf(send_buffer, "450 Requested file action not taken. \r\n");
-				send(connSock, send_buffer, sizeof(send_buffer),0);
+			if (checkUserLogin) {
+				//printf("%s", command); ->Log.d("myLog",command);
+				//"command" is file name that is sent to client
+				if (fopen(command, "r") == NULL) {
+					sprintf(send_buffer, "450 Requested file action not taken. \r\n");
+					send(connSock, send_buffer, sizeof(send_buffer), 0);
+				}
+				else {
+					sprintf(send_buffer, "150 Transfering... \r\n");
+					bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+
+					//handle file
+					FILE *fp = fopen(command, "r");
+					char ch;
+					FILE *new_file = fopen("LocalHost/GroupBy.txt", "w");
+					while ((ch = fgetc(fp)) != EOF) {
+						//printf("%c", ch); ->Log
+						fputc(ch, new_file);
+					}
+					fclose(new_file);
+					fclose(fp);
+
+					sprintf(send_buffer, "226 File transfer completed... \r\n");
+					bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+				}
 			}
 			else {
-				sprintf(send_buffer, "150 Transfering... \r\n");
+				sprintf(send_buffer, "231 User logged out; service terminated\r\n");
 				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
-				
-				//handle file
-				FILE *fp = fopen(command, "r");
-				char ch;
-				FILE *new_file = fopen("D:\dataClient_RETR", "w");
-				while ((ch = fgetc(fp)) != EOF) {
-					//printf("%c", ch); ->Log
-					fputc(ch, new_file);
-				}
-				fclose(new_file);
-				fclose(fp);
+			}
+		}
 
+		//LIST OR NLST: display file in remote host (server)
+		if (strncmp(receive_buffer, "LIST: ", 6) == 0|| strncmp(receive_buffer, "NLST: ", 6) == 0)
+		{
+			if (checkUserLogin) {
+				system("cd RemoteHost&&dir > allFile.txt");
+				FILE *fin = fopen("RemoteHost/allFile.txt", "r");//open allFile.txt file
+																 //(send_buffer, 0, 1024);
+				sprintf(send_buffer, "150 Transfering... \r\n");//send_buffer will pointer to string in sprintf
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+				char temp_buffer[1024];
+				while (!feof(fin))
+				{
+					fgets(temp_buffer, 1023, fin);//read content of file allFile.txt and save in temp_buffer
+					sprintf(send_buffer, "%s", temp_buffer);//send_buffer will pointer to string in temp_buffer
+					send(connSock, send_buffer, strlen(send_buffer), 0);
+				}
+				fclose(fin);
 				sprintf(send_buffer, "226 File transfer completed... \r\n");
 				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
 			}
+			else {
+				sprintf(send_buffer, "231 User logged out; service terminated\r\n");
+				bytes = send(connSock, send_buffer, strlen(send_buffer), 0);
+			}
 
-		}
-
-		//LIST OR NLST
-		if (strncmp(receive_buffer, "LIST: ", 6) == 0|| strncmp(receive_buffer, "NLST: ", 6) == 0)
-		{
-
+			if (bytes < 0) break;
 		}
 
 		//QUIT: Disconnect

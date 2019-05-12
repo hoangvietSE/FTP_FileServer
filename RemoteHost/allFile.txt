@@ -1,0 +1,13 @@
+ Volume in drive D is New Volume
+ Volume Serial Number is 1C70-8D53
+
+ Directory of D:\ProgrammingLanguage\Project\Visual Studio Project\NetworkProgramming\FTP_SERVER_OFFICAL\RemoteHost
+
+05/13/2019  12:01 AM    <DIR>          .
+05/13/2019  12:01 AM    <DIR>          ..
+05/13/2019  12:14 AM                 0 allFile.txt
+05/12/2019  08:14 PM                40 GroupBy.txt
+05/13/2019  12:01 AM               177 SuperMatch.txt
+05/12/2019  11:52 PM                46 syst.txt
+               4 File(s)            263 bytes
+               2 Dir(s)  95,293,960,192 bytes free
